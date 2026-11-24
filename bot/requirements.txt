@@ -1,0 +1,6 @@
+anthropic==2.13.0
+feedparser==6.0.14
+pydantic==2.14.4
+python-dotenv==1.2.4
+requests==2.34.2
+trafilatura==2.4.0

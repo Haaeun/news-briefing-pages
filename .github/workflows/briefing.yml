@@ -1,0 +1,69 @@
+name: daily-briefing
+
+on:
+  schedule:
+    - cron: "0 22 * * *" # 매일 07:00 KST (UTC 22:00)
+  workflow_dispatch: # Actions 탭에서 수동 실행
+
+permissions:
+  contents: write
+
+concurrency: briefing
+
+jobs:
+  briefing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: bot/requirements.txt
+
+      - run: pip install -r bot/requirements.txt
+
+      - name: 카카오 토큰 복원
+        env:
+          KAKAO_TOKENS: ${{ secrets.KAKAO_TOKENS }}
+        run: |
+          python - <<'EOF'
+          import json, os, pathlib
+          d = pathlib.Path("bot/tokens"); d.mkdir(exist_ok=True)
+          for name, tokens in json.loads(os.environ["KAKAO_TOKENS"]).items():
+              (d / f"{name}.json").write_text(json.dumps(tokens), "utf-8")
+          EOF
+
+      - name: 브리핑 실행
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+          MY_INTERESTS: ${{ vars.MY_INTERESTS }}
+          PAGES_DIR: ${{ github.workspace }}
+          PAGES_URL: https://haaeun.github.io/news-briefing-pages
+          PYTHONIOENCODING: utf-8
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python bot/news_briefing.py
+
+      # 리프레시 토큰은 만료가 가까우면 새로 나오므로 바뀌었을 때만 시크릿을 갱신
+      - name: 갱신된 카카오 토큰 저장
+        if: always()
+        env:
+          KAKAO_TOKENS: ${{ secrets.KAKAO_TOKENS }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          python - <<'EOF' > /tmp/tokens.json
+          import json, pathlib
+          print(json.dumps({p.stem: json.loads(p.read_text("utf-8")) for p in sorted(pathlib.Path("bot/tokens").glob("*.json"))}))
+          EOF
+          changed=$(python -c "import json,os; a=json.loads(os.environ['KAKAO_TOKENS']); b=json.load(open('/tmp/tokens.json')); print(any(a.get(k,{}).get('refresh_token')!=v.get('refresh_token') for k,v in b.items()))")
+          if [ "$changed" = "True" ]; then
+            gh secret set KAKAO_TOKENS --repo "$GITHUB_REPOSITORY" < /tmp/tokens.json
+            echo "카카오 리프레시 토큰 갱신됨"
+          fi
+          rm -f /tmp/tokens.json
