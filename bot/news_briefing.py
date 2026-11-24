@@ -486,20 +486,21 @@ document.querySelectorAll("input[name=tab]").forEach(function (r) {{
 
 
 def publish_page(page, today):
-    """날짜 파일과 index.html 을 쓰고 GitHub 에 올린다. 공개 주소를 돌려준다."""
+    """archive/날짜.html 과 index.html 을 쓰고 GitHub 에 올린다. 공개 주소를 돌려준다."""
     repo = Path(PAGES_DIR)
-    (repo / f"{today}.html").write_text(page, "utf-8")
+    (repo / "archive").mkdir(exist_ok=True)
+    (repo / "archive" / f"{today}.html").write_text(page, "utf-8")
     (repo / "index.html").write_text(page, "utf-8")
 
     def git(*args):
         subprocess.run(["git", "-C", str(repo), *args], check=True)
 
-    git("add", f"{today}.html", "index.html")
+    git("add", f"archive/{today}.html", "index.html")
     # 같은 날 다시 돌려 내용이 같으면 커밋할 게 없다
     if subprocess.run(["git", "-C", str(repo), "diff", "--cached", "--quiet"]).returncode:
         git("commit", "-m", f"briefing {today}")
     git("push")
-    return f"{PAGES_URL}/{today}.html"
+    return f"{PAGES_URL}/archive/{today}.html"
 
 
 def send_page_briefing(token, groups, url, today, cheer=""):
