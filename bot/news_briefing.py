@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -29,7 +30,7 @@ TOKEN_DIR = BASE_DIR / "tokens"  # 받는 사람마다 <이름>.json
 LEGACY_TOKEN_FILE = BASE_DIR / "kakao_tokens.json"
 load_dotenv(BASE_DIR / ".env")
 
-KAKAO_REST_KEY = os.environ["KAKAO_REST_KEY"]
+KAKAO_REST_KEY = os.environ.get("KAKAO_REST_KEY", "")
 KAKAO_REDIRECT_URI = os.environ.get("KAKAO_REDIRECT_URI", "https://localhost")
 KAKAO_CLIENT_SECRET = os.environ.get("KAKAO_CLIENT_SECRET")  # 콘솔에서 켠 경우만
 MY_INTERESTS = os.environ.get("MY_INTERESTS") or "경제, 부동산, AI, IT·테크, 건강"
@@ -55,11 +56,22 @@ KAKAO_TEXT_LIMIT = 200  # 텍스트 템플릿 본문 최대 길이
 
 
 # ── 뉴스 수집 ────────────────────────────────
+def parse_feed(url, tries=2):
+    """사이트가 접속을 끊으면 한 번 더 시도하고, 그래도 안 되면 빈 피드로 건너뛴다."""
+    for i in range(tries):
+        try:
+            return feedparser.parse(url, agent="Mozilla/5.0")
+        except Exception as e:
+            print(f"[경고] 피드 접속 실패 ({i + 1}/{tries}): {url} ({e})")
+            time.sleep(3)
+    return feedparser.FeedParserDict(entries=[])
+
+
 def get_news(max_per_feed=20):
     articles = []
     seen = set()  # 종합·분야 피드에 같은 기사가 겹친다
     for url in RSS_FEEDS:
-        feed = feedparser.parse(url, agent="Mozilla/5.0")
+        feed = parse_feed(url)
         if not feed.entries:
             print(f"[경고] 기사를 못 가져옴: {url}")
         for entry in feed.entries[:max_per_feed]:
@@ -517,6 +529,10 @@ def send_briefing(token, picks, today):
 
 
 def main(preview=False):
+    # 설정이 빠졌으면 Claude 비용을 쓰기 전에 멈춘다
+    missing = [k for k in ("ANTHROPIC_API_KEY", "KAKAO_REST_KEY") if not os.environ.get(k)]
+    if missing:
+        sys.exit(f"환경 변수가 비어 있습니다: {', '.join(missing)}")
     names = recipients()
     if not names and not preview:
         sys.exit("받는 사람이 없습니다. 먼저 `python news_briefing.py --auth` 를 실행하세요.")
