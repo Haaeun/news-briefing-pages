@@ -197,7 +197,7 @@ def summarize_with_claude(articles, interests, today):
     return write_briefs(picked, fetched, today, SUMMARY_MODEL)
 
 
-def recent_cheers(days=7):
+def recent_cheers(days=30):
     """최근 브리핑의 한마디를 모은다. 매일 같은 문장이 나오는 걸 막는 용도."""
     if not PAGES_DIR:
         return []
