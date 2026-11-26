@@ -197,11 +197,27 @@ def summarize_with_claude(articles, interests, today):
     return write_briefs(picked, fetched, today, SUMMARY_MODEL)
 
 
+def recent_cheers(days=7):
+    """최근 브리핑의 한마디를 모은다. 매일 같은 문장이 나오는 걸 막는 용도."""
+    if not PAGES_DIR:
+        return []
+    files = sorted((Path(PAGES_DIR) / "archive").glob("*.html"))[-days:]
+    marker = "<span>오늘의 한마디</span>"
+    cheers = []
+    for f in files:
+        page = f.read_text("utf-8")
+        if marker in page:
+            cheers.append(html.unescape(page.split(marker, 1)[1].split("</p>", 1)[0]).strip())
+    return cheers
+
+
 def write_briefs(picked, fetched, today, model):
     blocks = "\n\n".join(
         f"=== [{i}] {a['title']}\n{(body or a['summary'])[:BODY_LIMIT]}"
         for i, ((_, a), (body, _, _)) in enumerate(zip(picked, fetched))
     )
+    past = recent_cheers()
+    avoid = ("\n최근에 쓴 한마디와 표현·소재가 겹치지 않게 새로 지어 주세요:\n" + "\n".join(f"- {c}" for c in past)) if past else ""
     prompt = f"""아래 기사들을 읽고 각각 한국어 브리핑을 써 주세요. 기사에 없는 내용은 쓰지 마세요.
 
 - id: 기사 [번호]
@@ -211,7 +227,7 @@ def write_briefs(picked, fetched, today, model):
 - detail: 배경과 의미를 담은 3~4문장 문단 (모든 문장을 '~습니다'체로)
 
 그리고 cheer 에는 오늘({today}) 하루를 응원하는 힘나는 한마디를 직접 지어 주세요.
-30자 이내, 따뜻하고 담백하게. 유명인 명언을 인용하거나 출처를 붙이지 마세요.
+30자 이내, 따뜻하고 담백하게. 유명인 명언을 인용하거나 출처를 붙이지 마세요.{avoid}
 
 기사:
 {blocks}
@@ -529,7 +545,7 @@ def send_briefing(token, picks, today):
             send_kakao(token, f"{i}️⃣ {p.title}\n📌 {p.lead}", p.link)
 
 
-def main(preview=False):
+def main(preview=False, force=False):
     # 설정이 빠졌으면 Claude 비용을 쓰기 전에 멈춘다
     missing = [k for k in ("ANTHROPIC_API_KEY", "KAKAO_REST_KEY") if not os.environ.get(k)]
     if missing:
@@ -537,7 +553,12 @@ def main(preview=False):
     names = recipients()
     if not names and not preview:
         sys.exit("받는 사람이 없습니다. 먼저 `python news_briefing.py --auth` 를 실행하세요.")
-    today = datetime.date.today().strftime("%Y-%m-%d")
+    # Actions 러너는 UTC 라 한국 날짜로 고정
+    today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%Y-%m-%d")
+    # 예약·외부 트리거가 겹쳐도 하루 한 번만 보낸다
+    if not preview and not force and PAGES_DIR and (Path(PAGES_DIR) / "archive" / f"{today}.html").exists():
+        print(f"{today} 브리핑은 이미 보냈습니다. 건너뜁니다.")
+        return
 
     print("뉴스 수집 중...")
     articles = get_news()
@@ -583,4 +604,4 @@ if __name__ == "__main__":
     elif "--code" in sys.argv:
         save_auth_code(arg("--code"), arg("--name") or "me")
     else:
-        main(preview="--preview" in sys.argv)
+        main(preview="--preview" in sys.argv, force="--force" in sys.argv)

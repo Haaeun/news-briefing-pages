@@ -2,8 +2,14 @@ name: daily-briefing
 
 on:
   schedule:
-    - cron: "0 22 * * *" # 매일 07:00 KST (UTC 22:00)
-  workflow_dispatch: # Actions 탭에서 수동 실행
+    # 정시 실행은 외부 cron(07:00 KST)이 workflow_dispatch 로 맡고, 이건 예비용
+    - cron: "17 22 * * *" # 07:17 KST
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "오늘 이미 보냈어도 다시 보내기"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -48,7 +54,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          python bot/news_briefing.py
+          python bot/news_briefing.py ${{ inputs.force && '--force' || '' }}
 
       # 리프레시 토큰은 만료가 가까우면 새로 나오므로 바뀌었을 때만 시크릿을 갱신
       - name: 갱신된 카카오 토큰 저장
